@@ -2,30 +2,30 @@
 
 > *"Started from curiosity, ended up as a weekend escape!"* 🎧
 
-Selamat datang di repo **Halo**! 
+Welcome to the **Halo** repository! 
 
-Proyek ini lahir dari keisengan murni dan rasa ingin tahu untuk ngulik bagaimana cara kerja aplikasi musik di balik layar. Tanpa *deadline* dan tekanan, ini murni sebuah *passion project* untuk bereksperimen dengan kode dan desain UI/UX.
+This project was born out of pure randomness and a deep curiosity to figure out how music apps work under the hood. With no deadlines and zero pressure, this is purely a passion project for experimenting with code and UI/UX design.
 
-## ✨ Kenapa Project Ini Menarik?
+## ✨ Why is this Project Interesting?
 
-*   🧪 **100% Curiosity-Driven:** *Playground* bebas untuk mencoba ide liar, bereksperimen dengan fitur, dan belajar hal baru tanpa batasan aturan kaku.
-*   🎨 **Clean & Comfortable UI:** Desain antarmuka (termasuk bereksperimen dengan logo ikonik) dibuat sebersih dan se-elegan mungkin agar nyaman dilihat.
-*   🛠️ **Open Coding Experiment:** Tempat melihat proses *trial & error* merakit aplikasi pemutar musik dari nol menggunakan Python.
+*   🧪 **100% Curiosity-Driven:** A completely free playground to test wild ideas, experiment with random features, and learn new things without any strict rules.
+*   🎨 **Clean & Comfortable UI:** The interface (including experiments with an iconic logo) is designed to be as clean and elegant as possible so it's easy on the eyes.
+*   🛠️ **Open Coding Experiment:** A place to witness the trial & error process of building a music player app from scratch using Python.
 
-## 🚀 Apa yang Ada di Sini?
+## 🚀 What's Inside?
 
-*   **UI/UX Concept:** Eksperimen layout pemutar musik yang minimalis.
+*   **UI/UX Concept:** Minimalist music player layout experiments.
 *   **Tech Stack:** Python (Core logic, UI, Media Handling, Lyrics).
-*   **Status:** *Work in progress* & terus berevolusi.
+*   **Status:** Work in progress & constantly evolving.
 
-## 🤝 Mari Mampir & Berkontribusi
+## 🤝 Let's Drop By & Contribute
 
-Kalau kamu kebetulan nyasar ke repo ini:
-*   Mau nge-*fork* untuk diulik sendiri? **Silakan!**
-*   Punya ide gila buat ditambahin? **Bikin Pull Request!**
-*   Cuma mau baca-baca kodenya? **Santai saja.**
+If you happen to stumble upon this repo:
+*   Want to fork it and tweak it yourself? **Go ahead!**
+*   Have a crazy feature idea to add? **Submit a Pull Request!**
+*   Just want to browse the codebase? **Take your time.**
 
-Jika proyek eksperimen ini cukup menarik buatmu, jangan ragu untuk menekan tombol ⭐ **Star** di pojok kanan atas!
+If you find this experimental project somewhat interesting, don't hesitate to hit that ⭐ **Star** button on the top right!
 
 ---
 *Stay curious, keep coding, and listen to good music!* 🎶
