@@ -6,7 +6,7 @@ from datetime import datetime
 
 from PySide6.QtCore import QEasingCurve, QPointF, QRectF, QSize, Qt, QTimer, QVariantAnimation, Signal
 from PySide6.QtGui import (QBrush, QColor, QFont, QFontMetrics, QLinearGradient, QPainter,
-                           QPainterPath, QPen, QPixmap, QRadialGradient)
+                           QFontDatabase, QPainterPath, QPen, QPixmap, QRadialGradient)
 from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QMenu,
                                QPushButton, QTextBrowser, QVBoxLayout, QWidget)
 
@@ -21,6 +21,49 @@ SIZES = {"col": COL, "exp": EXP, "lyr": LYR}
 COVER, COVER_SMALL = 64, 28
 TEXT_W = 170
 AUTO_COLLAPSE_MS = 6000
+
+
+# Font ala Apple Music: Inter (open source, paling mirip SF Pro) dimuat dari assets/fonts.
+# Jika gagal dimuat, dipakai SF Pro / Segoe UI Variable / Segoe UI.
+FALLBACK_FAMILIES = ["SF Pro Display", "Segoe UI Variable Display", "Segoe UI"]
+WEIGHTS = {"regular": (400, QFont.Normal), "semibold": (600, QFont.DemiBold),
+           "bold": (700, QFont.Bold)}
+_FAMILIES = []
+
+
+def load_fonts(folder):
+    import glob
+    import os
+    for path in sorted(glob.glob(os.path.join(folder, "*.[ot]tf"))):
+        fid = QFontDatabase.addApplicationFont(path)
+        if fid >= 0:
+            for fam in QFontDatabase.applicationFontFamilies(fid):
+                if fam not in _FAMILIES:
+                    _FAMILIES.append(fam)
+
+
+def make_font(role, size):
+    want, qt_weight = WEIGHTS[role]
+    best = None
+    for fam in _FAMILIES:
+        for st in QFontDatabase.styles(fam):
+            key = (abs(QFontDatabase.weight(fam, st) - want), len(fam))
+            if best is None or key < best[0]:
+                best = (key, fam, st)
+    if best:
+        return QFontDatabase.font(best[1], best[2], size)
+    f = QFont()
+    f.setFamilies(FALLBACK_FAMILIES)
+    f.setPointSize(size)
+    f.setWeight(qt_weight)
+    return f
+
+
+def mix(a, b, t):
+    ca, cb = QColor(a), QColor(b)
+    return QColor(int(ca.red() * (1 - t) + cb.red() * t),
+                  int(ca.green() * (1 - t) + cb.green() * t),
+                  int(ca.blue() * (1 - t) + cb.blue() * t)).name()
 
 
 def fmt(sec):
@@ -257,7 +300,7 @@ class Halo(QWidget):
         self.col_cover = QLabel(alignment=Qt.AlignCenter)
         self.col_cover.setFixedSize(COVER_SMALL, COVER_SMALL)
         self.col_clock = QLabel(alignment=Qt.AlignCenter)
-        self.col_clock.setFont(QFont("Segoe UI", 11, QFont.DemiBold))
+        self.col_clock.setFont(make_font("semibold", 11))
         for l in (self.col_cover, self.col_clock):
             l.setAttribute(Qt.WA_TransparentForMouseEvents)
         cl.addWidget(self.col_cover)
@@ -286,8 +329,8 @@ class Halo(QWidget):
         text = QVBoxLayout()
         text.setSpacing(2)
         self.title, self.artist = QLabel(), QLabel()
-        self.title.setFont(QFont("Segoe UI", 11, QFont.DemiBold))
-        self.artist.setFont(QFont("Segoe UI", 9))
+        self.title.setFont(make_font("semibold", 11))
+        self.artist.setFont(make_font("regular", 9))
         for l in (self.title, self.artist):
             l.setAttribute(Qt.WA_TransparentForMouseEvents)
         text.addStretch()
@@ -315,7 +358,7 @@ class Halo(QWidget):
         self.t_tot.setFixedWidth(36)
         self.t_tot.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         for l in (self.t_cur, self.t_tot):
-            l.setFont(QFont("Segoe UI", 8))
+            l.setFont(make_font("semibold", 8))
             l.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.bar = SeekBar()
         self.bar.moved.connect(lambda r: self.t_cur.setText(fmt(r * self._dur)))
@@ -328,7 +371,7 @@ class Halo(QWidget):
 
         self.lyr = QTextBrowser()
         self.lyr.setFrameShape(QTextBrowser.NoFrame)
-        self.lyr.setFont(QFont("Segoe UI", 10))
+        self.lyr.setFont(make_font("bold", 10))
         self.lyr.viewport().setAutoFillBackground(False)
         self.lyr.setContextMenuPolicy(Qt.NoContextMenu)  # klik kanan diteruskan ke menu Halo
         self.lyr.hide()
@@ -556,18 +599,15 @@ class Halo(QWidget):
                     f"{msgs[st]}</p>")
         elif st == "synced":
             idx = bisect_right(self._ly_times, self._cur_pos() + 0.2) - 1
+            dim = mix(p["fg"], p["bg2"], 0.58)
             rows = []
             for i in range(idx - 2, idx + 3):
                 if 0 <= i < len(self._ly):
                     raw = html.escape(self._ly[i][1])
                     t = f"“{raw}”" if raw else "♪"
-                    if i == idx:
-                        rows.append(f"<p align='center' style='margin:5px 0;'><span style="
-                                    f"'color:{p['accent']}; font-size:16px; font-weight:600;'>"
-                                    f"{t}</span></p>")
-                    else:
-                        rows.append(f"<p align='center' style='margin:5px 0;'><span style="
-                                    f"'color:{p['muted']}; font-size:12px;'>{t}</span></p>")
+                    color = p["fg"] if i == idx else dim
+                    rows.append(f"<p align='left' style='margin:5px 0;'><span style="
+                                f"'color:{color}; font-size:15px;'>{t}</span></p>")
                 else:
                     rows.append("<p style='margin:5px 0;'>&nbsp;</p>")
             body = "".join(rows)
@@ -575,7 +615,7 @@ class Halo(QWidget):
             policy = Qt.ScrollBarAsNeeded
             lines = [f"“{html.escape(l.strip())}”" if l.strip() else ""
                      for l in (self._plain or "").splitlines()]
-            body = (f"<p align='center' style='color:{p['fg']}; font-size:12px;'>"
+            body = (f"<p align='left' style='color:{p['fg']}; font-size:13px;'>"
                     f"{'<br>'.join(lines)}</p>")
         if body == self._ly_last:
             return
