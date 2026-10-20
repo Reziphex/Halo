@@ -33,6 +33,8 @@ def main():
         pass
 
     app = QApplication(sys.argv)
+    app.setApplicationName("Halo")
+    app.setApplicationDisplayName("Halo")
     app.setQuitOnLastWindowClosed(False)  # tetap hidup di latar belakang
     load_fonts(resource_path(os.path.join("assets", "fonts")))
     app.setFont(make_font("regular", 10))

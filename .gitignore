@@ -1,2 +1,18 @@
+# Virtual environment
 .venv/
+
+# Python cache
 __pycache__/
+*.pyc
+
+# PyInstaller output (dibuat ulang oleh build.bat)
+build/
+dist/
+*.spec
+build.log
+
+# OS / editor
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/
