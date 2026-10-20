@@ -1,10 +1,7 @@
 # 🎵 Halo
 
-> *"Started from curiosity, ended up as a weekend escape!"* 🎧
-
-Welcome to the **Halo** repository! 
-
-This project was born out of pure randomness and a deep curiosity to figure out how music apps work under the hood. With no deadlines and zero pressure, this is purely a passion project for experimenting with code and UI/UX design.
+## 📖 About Halo
+Started from curiosity, ended up as a weekend escape! 🎧 This passion project explores how music apps work under the hood. No deadlines—just a playground for wild ideas, clean UI/UX, and coding experiments. Feel free to explore, fork, or drop a ⭐ if you like it. Stay curious! 🎶
 
 ## ✨ Why is this Project Interesting?
 
@@ -24,8 +21,3 @@ If you happen to stumble upon this repo:
 *   Want to fork it and tweak it yourself? **Go ahead!**
 *   Have a crazy feature idea to add? **Submit a Pull Request!**
 *   Just want to browse the codebase? **Take your time.**
-
-If you find this experimental project somewhat interesting, don't hesitate to hit that ⭐ **Star** button on the top right!
-
----
-*Stay curious, keep coding, and listen to good music!* 🎶
