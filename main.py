@@ -6,7 +6,7 @@ from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from media import SpotifyWatcher
-from ui import Halo
+from ui import Halo, load_fonts, make_font
 from wallpaper import get_palette
 
 
@@ -34,6 +34,8 @@ def main():
 
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # tetap hidup di latar belakang
+    load_fonts(resource_path(os.path.join("assets", "fonts")))
+    app.setFont(make_font("regular", 10))
     icon = QIcon(resource_path(os.path.join("assets", "halo.png")))
     app.setWindowIcon(icon)
 
