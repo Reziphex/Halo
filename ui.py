@@ -7,8 +7,8 @@ from datetime import datetime
 from PySide6.QtCore import QEasingCurve, QPointF, QRectF, QSize, Qt, QTimer, QVariantAnimation, Signal
 from PySide6.QtGui import (QBrush, QColor, QFont, QFontMetrics, QLinearGradient, QPainter,
                            QPainterPath, QPen, QPixmap, QRadialGradient)
-from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QPushButton,
-                               QTextBrowser, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QMenu,
+                               QPushButton, QTextBrowser, QVBoxLayout, QWidget)
 
 from lyrics import LyricsFetcher
 from wallpaper import palette_from_bytes
@@ -330,6 +330,7 @@ class Halo(QWidget):
         self.lyr.setFrameShape(QTextBrowser.NoFrame)
         self.lyr.setFont(QFont("Segoe UI", 10))
         self.lyr.viewport().setAutoFillBackground(False)
+        self.lyr.setContextMenuPolicy(Qt.NoContextMenu)  # klik kanan diteruskan ke menu Halo
         self.lyr.hide()
         ev.addWidget(self.lyr, 1)
 
@@ -492,6 +493,21 @@ class Halo(QWidget):
                 self._auto.stop()
                 self.set_mode("exp")
             self._press = None
+
+    def contextMenuEvent(self, e):
+        p = self.pal
+        m = QMenu(self)
+        m.setStyleSheet(
+            f"QMenu {{ background: {p['bg2']}; color: {p['fg']}; padding: 4px;"
+            f" border: 1px solid {p['accent']}; }}"
+            f"QMenu::item {{ padding: 6px 20px; }}"
+            f"QMenu::item:selected {{ background: rgba(255,255,255,0.14); }}"
+            f"QMenu::separator {{ height: 1px; background: rgba(255,255,255,0.15);"
+            f" margin: 4px 8px; }}")
+        m.addAction("Reset posisi ke atas tengah").triggered.connect(self.reset_position)
+        m.addSeparator()
+        m.addAction("Keluar dari Halo").triggered.connect(QApplication.quit)
+        m.exec(e.globalPos())
 
     # ---------- jam, progres, seek ----------
     def _tick(self):
