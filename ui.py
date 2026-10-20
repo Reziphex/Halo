@@ -1,23 +1,25 @@
-"""Pop-up ala Dynamic Island: jam, cover, progres lagu, dan lirik."""
+"""Pop-up ala Dynamic Island: jam + cover, progres yang bisa digeser, dan lirik."""
 import html
 import time
 from bisect import bisect_right
 from datetime import datetime
 
-from PySide6.QtCore import QEasingCurve, QSize, Qt, QTimer, QVariantAnimation
-from PySide6.QtGui import (QColor, QFont, QFontMetrics, QLinearGradient, QPainter,
-                           QPainterPath, QPen, QPixmap)
-from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QProgressBar,
+from PySide6.QtCore import QEasingCurve, QPointF, QRectF, QSize, Qt, QTimer, QVariantAnimation, Signal
+from PySide6.QtGui import (QBrush, QColor, QFont, QFontMetrics, QLinearGradient, QPainter,
+                           QPainterPath, QPen, QPixmap, QRadialGradient)
+from PySide6.QtWidgets import (QApplication, QHBoxLayout, QLabel, QMenu,
                                QPushButton, QTextBrowser, QVBoxLayout, QWidget)
 
 from lyrics import LyricsFetcher
+from wallpaper import palette_from_bytes
 
-COL = QSize(150, 38)    # collapsed: jam
+OPACITY = 0.72          # 0.0 = tembus total, 1.0 = solid. Ubah sesuai selera.
+COL = QSize(124, 40)    # collapsed: cover + jam
 EXP = QSize(460, 108)   # expanded: cover, judul, kontrol, progres
 LYR = QSize(460, 270)   # expanded + lirik
 SIZES = {"col": COL, "exp": EXP, "lyr": LYR}
-COVER = 64
-TEXT_W = 185
+COVER, COVER_SMALL = 64, 28
+TEXT_W = 170
 AUTO_COLLAPSE_MS = 6000
 
 
@@ -43,6 +45,158 @@ def round_pixmap(src, size, radius):
     return out
 
 
+class SeekBar(QWidget):
+    """Bar progres yang bisa diklik/digeser untuk pindah menit lagu."""
+    moved = Signal(float)      # rasio 0..1 selama digeser
+    scrubbed = Signal(float)   # rasio 0..1 saat dilepas
+
+    def __init__(self):
+        super().__init__()
+        self.setFixedHeight(16)
+        self.setCursor(Qt.PointingHandCursor)
+        self.ratio, self.dragging, self.hover = 0.0, False, False
+        self.fill = QColor("#ffffff")
+
+    def set_ratio(self, r):
+        if not self.dragging:
+            self.ratio = min(max(r, 0.0), 1.0)
+            self.update()
+
+    def _at(self, x):
+        return min(max((x - 6) / max(self.width() - 12, 1), 0.0), 1.0)
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.LeftButton:
+            self.dragging = True
+            self.ratio = self._at(e.position().x())
+            self.moved.emit(self.ratio)
+            self.update()
+
+    def mouseMoveEvent(self, e):
+        if self.dragging:
+            self.ratio = self._at(e.position().x())
+            self.moved.emit(self.ratio)
+            self.update()
+
+    def mouseReleaseEvent(self, e):
+        if self.dragging and e.button() == Qt.LeftButton:
+            self.dragging = False
+            self.scrubbed.emit(self.ratio)
+            self.update()
+
+    def enterEvent(self, e):
+        self.hover = True
+        self.update()
+
+    def leaveEvent(self, e):
+        self.hover = False
+        self.update()
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        w, cy = self.width() - 12, self.height() / 2
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(255, 255, 255, 55))
+        p.drawRoundedRect(QRectF(6, cy - 2, w, 4), 2, 2)
+        fw = w * self.ratio
+        p.setBrush(self.fill)
+        p.drawRoundedRect(QRectF(6, cy - 2, fw, 4), 2, 2)
+        if self.hover or self.dragging:
+            p.drawEllipse(QPointF(6 + fw, cy), 6, 6)
+
+
+class IconButton(QPushButton):
+    """Tombol dengan ikon vektor (tajam di semua DPI), pengganti glyph font."""
+
+    def __init__(self, kind, tip, size, fn):
+        super().__init__()
+        self.kind, self.active, self._hover = kind, False, False
+        self.filled = kind in ("play", "pause")
+        self.fg, self.accent, self.dark = QColor("#ffffff"), QColor("#ffffff"), QColor("#111111")
+        self.setToolTip(tip)
+        self.setFixedSize(size, size)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.NoFocus)
+        self.clicked.connect(fn)
+
+    def set_kind(self, kind):
+        self.kind, self.filled = kind, kind in ("play", "pause")
+        self.update()
+
+    def set_active(self, on):
+        self.active = on
+        self.update()
+
+    def set_colors(self, fg, accent, dark):
+        self.fg, self.accent, self.dark = fg, accent, dark
+        self.update()
+
+    def enterEvent(self, e):
+        self._hover = True
+        self.update()
+
+    def leaveEvent(self, e):
+        self._hover = False
+        self.update()
+
+    def paintEvent(self, _):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height()
+        k, cx, cy = w / 30.0, w / 2.0, h / 2.0
+        p.setPen(Qt.NoPen)
+        if self.filled:  # tombol utama: lingkaran terang, ikon gelap
+            bg = QColor(self.fg)
+            bg.setAlpha(255 if self._hover else 238)
+            p.setBrush(bg)
+            p.drawEllipse(QRectF(0.5, 0.5, w - 1, h - 1))
+            col = self.dark
+        else:
+            if self._hover or self.active:
+                bg = QColor(self.accent) if self.active else QColor(255, 255, 255)
+                bg.setAlpha(46 if self.active else 38)
+                p.setBrush(bg)
+                p.drawEllipse(QRectF(1, 1, w - 2, h - 2))
+            col = self.accent if self.active else self.fg
+
+        kd, path, solid = self.kind, QPainterPath(), True
+        if kd in ("prev", "next"):
+            d = -1 if kd == "prev" else 1
+            path.moveTo(cx - d * 5.5 * k, cy - 5.2 * k)
+            path.lineTo(cx - d * 5.5 * k, cy + 5.2 * k)
+            path.lineTo(cx + d * 3.5 * k, cy)
+            path.closeSubpath()
+            path.addRoundedRect(QRectF(cx + d * 6 * k - 1.0 * k, cy - 5.2 * k, 2.0 * k, 10.4 * k),
+                                1.0 * k, 1.0 * k)
+            width = 1.6 * k
+        elif kd == "play":
+            path.moveTo(cx - 3.8 * k, cy - 6.5 * k)
+            path.lineTo(cx - 3.8 * k, cy + 6.5 * k)
+            path.lineTo(cx + 6.6 * k, cy)
+            path.closeSubpath()
+            width = 1.4 * k
+        elif kd == "pause":
+            path.addRoundedRect(QRectF(cx - 5.4 * k, cy - 5.8 * k, 3.4 * k, 11.6 * k), 1.2 * k, 1.2 * k)
+            path.addRoundedRect(QRectF(cx + 2.0 * k, cy - 5.8 * k, 3.4 * k, 11.6 * k), 1.2 * k, 1.2 * k)
+            width = 1.0 * k
+        elif kd == "lyrics":  # tiga baris teks
+            solid = False
+            for y, x1 in ((-5, 7), (0, 2), (5, 5)):
+                path.moveTo(cx - 7 * k, cy + y * k)
+                path.lineTo(cx + x1 * k, cy + y * k)
+            width = 1.8 * k
+        else:  # close: chevron ke atas
+            solid = False
+            path.moveTo(cx - 5 * k, cy + 2.5 * k)
+            path.lineTo(cx, cy - 2.5 * k)
+            path.lineTo(cx + 5 * k, cy + 2.5 * k)
+            width = 1.8 * k
+        p.setPen(QPen(col, width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        p.setBrush(col if solid else Qt.NoBrush)
+        p.drawPath(path)
+
+
 class Halo(QWidget):
     def __init__(self, watcher, get_palette):
         super().__init__()
@@ -57,8 +211,9 @@ class Halo(QWidget):
         self._track, self._was_playing = None, False
         self._press = self._origin = None
         self._moved = False
-        self._has_cover = False
+        self._cover_pm, self._cover_pal = None, None
         self._dur, self._anchor = 0.0, (0.0, time.monotonic())
+        self._seek_hold = 0.0
         self._ly, self._ly_times, self._plain = [], [], None
         self._ly_state, self._ly_key, self._ly_last = "loading", None, None
         self.pal = get_palette()
@@ -90,24 +245,23 @@ class Halo(QWidget):
         watcher.cover.connect(self.on_cover)
 
     # ---------- UI ----------
-    def _btn(self, text, tip, fn):
-        b = QPushButton(text)
-        b.setToolTip(tip)
-        b.setFixedSize(30, 30)
-        b.setCursor(Qt.PointingHandCursor)
-        b.setFocusPolicy(Qt.NoFocus)
-        b.clicked.connect(fn)
-        return b
-
     def _build(self):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
 
-        # --- collapsed: jam ---
-        self.col = QLabel(alignment=Qt.AlignCenter)
-        self.col.setTextFormat(Qt.RichText)
-        self.col.setFont(QFont("Segoe UI", 10, QFont.DemiBold))
-        self.col.setAttribute(Qt.WA_TransparentForMouseEvents)
+        # --- collapsed: cover di samping jam ---
+        self.col = QWidget()
+        cl = QHBoxLayout(self.col)
+        cl.setContentsMargins(6, 6, 16, 6)
+        cl.setSpacing(8)
+        self.col_cover = QLabel(alignment=Qt.AlignCenter)
+        self.col_cover.setFixedSize(COVER_SMALL, COVER_SMALL)
+        self.col_clock = QLabel(alignment=Qt.AlignCenter)
+        self.col_clock.setFont(QFont("Segoe UI", 11, QFont.DemiBold))
+        for l in (self.col_cover, self.col_clock):
+            l.setAttribute(Qt.WA_TransparentForMouseEvents)
+        cl.addWidget(self.col_cover)
+        cl.addWidget(self.col_clock, 1)
         lay.addWidget(self.col)
 
         # --- expanded ---
@@ -143,12 +297,12 @@ class Halo(QWidget):
         r1.addLayout(text, 1)
 
         btns = QHBoxLayout()
-        btns.setSpacing(2)
-        self.btn_prev = self._btn("⏮", "Sebelumnya", lambda: self.watcher.command("prev"))
-        self.btn_play = self._btn("⏸", "Putar/Jeda", lambda: self.watcher.command("play_pause"))
-        self.btn_next = self._btn("⏭", "Berikutnya", lambda: self.watcher.command("next"))
-        self.btn_lyr = self._btn("♫", "Lirik", self._toggle_lyrics)
-        self.btn_close = self._btn("⌃", "Tutup", self._close_clicked)
+        btns.setSpacing(4)
+        self.btn_prev = IconButton("prev", "Sebelumnya", 30, lambda: self.watcher.command("prev"))
+        self.btn_play = IconButton("pause", "Putar/Jeda", 38, lambda: self.watcher.command("play_pause"))
+        self.btn_next = IconButton("next", "Berikutnya", 30, lambda: self.watcher.command("next"))
+        self.btn_lyr = IconButton("lyrics", "Lirik", 30, self._toggle_lyrics)
+        self.btn_close = IconButton("close", "Tutup", 30, self._close_clicked)
         for b in (self.btn_prev, self.btn_play, self.btn_next, self.btn_lyr, self.btn_close):
             btns.addWidget(b)
         r1.addLayout(btns)
@@ -163,13 +317,11 @@ class Halo(QWidget):
         for l in (self.t_cur, self.t_tot):
             l.setFont(QFont("Segoe UI", 8))
             l.setAttribute(Qt.WA_TransparentForMouseEvents)
-        self.bar = QProgressBar()
-        self.bar.setRange(0, 1000)
-        self.bar.setTextVisible(False)
-        self.bar.setFixedHeight(4)
-        self.bar.setAttribute(Qt.WA_TransparentForMouseEvents)
+        self.bar = SeekBar()
+        self.bar.moved.connect(lambda r: self.t_cur.setText(fmt(r * self._dur)))
+        self.bar.scrubbed.connect(self._on_seek)
         r2.addWidget(self.t_cur)
-        r2.addWidget(self.bar, 1, Qt.AlignVCenter)
+        r2.addWidget(self.bar, 1)
         r2.addWidget(self.t_tot)
         tv.addLayout(r2)
         ev.addWidget(self.top, 0, Qt.AlignTop)
@@ -177,6 +329,8 @@ class Halo(QWidget):
         self.lyr = QTextBrowser()
         self.lyr.setFrameShape(QTextBrowser.NoFrame)
         self.lyr.setFont(QFont("Segoe UI", 10))
+        self.lyr.viewport().setAutoFillBackground(False)
+        self.lyr.setContextMenuPolicy(Qt.NoContextMenu)  # klik kanan diteruskan ke menu Halo
         self.lyr.hide()
         ev.addWidget(self.lyr, 1)
 
@@ -187,33 +341,36 @@ class Halo(QWidget):
         p = self.pal
         self.setStyleSheet(f"""
             QLabel {{ color: {p['fg']}; }}
-            QPushButton {{ background: transparent; color: {p['fg']}; border: none;
-                           border-radius: 15px; font-size: 14px;
-                           font-family: 'Segoe UI Symbol'; }}
-            QPushButton:hover {{ background: rgba(255,255,255,0.16); }}
-            QProgressBar {{ background: rgba(255,255,255,0.18); border: none;
-                            border-radius: 2px; }}
-            QProgressBar::chunk {{ background: {p['accent']}; border-radius: 2px; }}
             QTextBrowser {{ background: transparent; border: none; }}""")
         self.artist.setStyleSheet(f"color: {p['muted']};")
         self.t_cur.setStyleSheet(f"color: {p['muted']};")
         self.t_tot.setStyleSheet(f"color: {p['muted']};")
-        if not self._has_cover:
-            self._placeholder_cover()
+        self.bar.fill = QColor(p["accent"])
+        self.bar.update()
+        for b in (self.btn_prev, self.btn_play, self.btn_next, self.btn_lyr, self.btn_close):
+            b.set_colors(QColor(p["fg"]), QColor(p["accent"]), QColor(p["bg2"]))
+        self._render_covers()
         self._ly_last = None
         self._render_lyrics()
         self.update()
         self._tick()
 
-    def _placeholder_cover(self):
-        self.cover_lbl.clear()
-        self.cover_lbl.setText("♪")
-        self.cover_lbl.setStyleSheet(
-            f"background: rgba(255,255,255,0.10); border-radius: 10px;"
-            f"color: {self.pal['accent']}; font-size: 26px;")
+    def _render_covers(self):
+        if self._cover_pm is not None:
+            for lbl, size, rad in ((self.cover_lbl, COVER, 10),
+                                   (self.col_cover, COVER_SMALL, COVER_SMALL // 2)):
+                lbl.setStyleSheet("background: transparent;")
+                lbl.setText("")
+                lbl.setPixmap(round_pixmap(self._cover_pm, size, rad))
+        else:
+            for lbl, rad, fs in ((self.cover_lbl, 10, 26), (self.col_cover, 14, 14)):
+                lbl.clear()
+                lbl.setText("♪")
+                lbl.setStyleSheet(f"background: rgba(255,255,255,0.10); border-radius: {rad}px;"
+                                  f"color: {self.pal['accent']}; font-size: {fs}px;")
 
     def refresh_palette(self):
-        new = self.get_palette()
+        new = self._cover_pal or self.get_palette()
         if new != self.pal:
             self.pal = new
             self.apply_palette()
@@ -221,20 +378,45 @@ class Halo(QWidget):
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-        r = self.rect().adjusted(1, 1, -1, -1)
+        r = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        rad = min(22.0, r.height() / 2)
+        path = QPainterPath()
+        path.addRoundedRect(r, rad, rad)
+
+        alpha = int(255 * OPACITY)
+        c1, c2 = QColor(self.pal["bg1"]), QColor(self.pal["bg2"])
+        c1.setAlpha(alpha)
+        c2.setAlpha(alpha)
         g = QLinearGradient(r.topLeft(), r.bottomRight())
-        g.setColorAt(0, QColor(self.pal["bg1"]))
-        g.setColorAt(1, QColor(self.pal["bg2"]))
+        g.setColorAt(0, c1)
+        g.setColorAt(1, c2)
+        p.fillPath(path, g)
+
+        # ambient: cahaya warna cover yang memancar dari sisi cover
+        glow = QColor(self.pal["accent"])
+        glow.setAlpha(int(110 * OPACITY + 30))
+        if self.mode == "col":
+            center, radius = QPointF(20, r.height() / 2), 80
+        else:
+            center, radius = QPointF(14 + COVER / 2, 12 + COVER / 2), 240
+        rg = QRadialGradient(center, radius)
+        rg.setColorAt(0, glow)
+        glow.setAlpha(0)
+        rg.setColorAt(1, glow)
+        p.setClipPath(path)
+        p.fillRect(self.rect(), QBrush(rg))
+        p.setClipping(False)
+
         border = QColor(self.pal["accent"])
         border.setAlpha(90)
-        p.setBrush(g)
         p.setPen(QPen(border, 1))
-        rad = min(22, r.height() / 2)
-        p.drawRoundedRect(r, rad, rad)
+        p.setBrush(Qt.NoBrush)
+        p.drawPath(path)
 
     # ---------- mode, ukuran & posisi ----------
     def _collapsed_state(self):
         self.mode = "col"
+        self.btn_lyr.set_active(False)
         self.setFixedSize(COL)
         self.exp.hide()
         self.lyr.hide()
@@ -249,6 +431,7 @@ class Halo(QWidget):
         if mode == self.mode:
             return
         prev, self.mode = self.mode, mode
+        self.btn_lyr.set_active(mode == "lyr")
         self._anim.stop()
         if mode == "col":
             self.exp.hide()
@@ -274,6 +457,7 @@ class Halo(QWidget):
                 self.lyr.show()
                 self._ly_last = None
                 self._render_lyrics()
+        self.update()
 
     def _auto_collapse(self):
         if self.mode == "exp":
@@ -310,11 +494,26 @@ class Halo(QWidget):
                 self.set_mode("exp")
             self._press = None
 
-    # ---------- jam, progres, lirik ----------
+    def contextMenuEvent(self, e):
+        p = self.pal
+        m = QMenu(self)
+        m.setStyleSheet(
+            f"QMenu {{ background: {p['bg2']}; color: {p['fg']}; padding: 4px;"
+            f" border: 1px solid {p['accent']}; }}"
+            f"QMenu::item {{ padding: 6px 20px; }}"
+            f"QMenu::item:selected {{ background: rgba(255,255,255,0.14); }}"
+            f"QMenu::separator {{ height: 1px; background: rgba(255,255,255,0.15);"
+            f" margin: 4px 8px; }}")
+        m.addAction("Reset posisi ke atas tengah").triggered.connect(self.reset_position)
+        m.addSeparator()
+        m.addAction("Keluar dari Halo").triggered.connect(QApplication.quit)
+        m.exec(e.globalPos())
+
+    # ---------- jam, progres, seek ----------
     def _tick(self):
-        color = self.pal["accent"] if self.playing else self.pal["muted"]
-        self.col.setText(f"<span style='color:{color}'>♪</span>&nbsp;&nbsp;"
-                         f"{datetime.now():%H:%M}")
+        color = self.pal["fg"] if self.playing else self.pal["muted"]
+        self.col_clock.setStyleSheet(f"color: {color};")
+        self.col_clock.setText(f"{datetime.now():%H:%M}")
 
     def _cur_pos(self):
         pos, t0 = self._anchor
@@ -328,12 +527,23 @@ class Halo(QWidget):
         if self.mode == "col" or not self.isVisible():
             return
         pos = self._cur_pos()
-        self.t_cur.setText(fmt(pos))
+        if not self.bar.dragging:
+            self.t_cur.setText(fmt(pos))
+            self.bar.set_ratio(pos / self._dur if self._dur > 0 else 0.0)
         self.t_tot.setText(fmt(self._dur))
-        self.bar.setValue(int(pos / self._dur * 1000) if self._dur > 0 else 0)
         if self.mode == "lyr" and self._ly_state == "synced":
             self._render_lyrics()
 
+    def _on_seek(self, ratio):
+        if self._dur <= 0:
+            return
+        pos = ratio * self._dur
+        self.watcher.seek(pos)
+        self._anchor = (pos, time.monotonic())
+        self._seek_hold = time.monotonic() + 1.5  # abaikan posisi lama dari Spotify sesaat
+        self._render_lyrics()
+
+    # ---------- lirik ----------
     def _render_lyrics(self):
         if self.mode != "lyr":
             return
@@ -349,7 +559,8 @@ class Halo(QWidget):
             rows = []
             for i in range(idx - 2, idx + 3):
                 if 0 <= i < len(self._ly):
-                    t = html.escape(self._ly[i][1]) or "♪"
+                    raw = html.escape(self._ly[i][1])
+                    t = f"“{raw}”" if raw else "♪"
                     if i == idx:
                         rows.append(f"<p align='center' style='margin:5px 0;'><span style="
                                     f"'color:{p['accent']}; font-size:16px; font-weight:600;'>"
@@ -362,9 +573,10 @@ class Halo(QWidget):
             body = "".join(rows)
         else:  # plain (tanpa timestamp): bisa di-scroll
             policy = Qt.ScrollBarAsNeeded
-            txt = html.escape(self._plain or "").replace("\n", "<br>")
+            lines = [f"“{html.escape(l.strip())}”" if l.strip() else ""
+                     for l in (self._plain or "").splitlines()]
             body = (f"<p align='center' style='color:{p['fg']}; font-size:12px;'>"
-                    f"{txt}</p>")
+                    f"{'<br>'.join(lines)}</p>")
         if body == self._ly_last:
             return
         self._ly_last = body
@@ -391,15 +603,16 @@ class Halo(QWidget):
         self._ly_last = None
         self._render_lyrics()
 
+    # ---------- cover & state Spotify ----------
     def on_cover(self, data):
         pm = QPixmap()
         if pm.loadFromData(data) and not pm.isNull():
-            self._has_cover = True
-            self.cover_lbl.setStyleSheet("background: transparent;")
-            self.cover_lbl.setText("")
-            self.cover_lbl.setPixmap(round_pixmap(pm, COVER, 10))
+            self._cover_pm = pm
+            pal = palette_from_bytes(data)
+            if pal:
+                self._cover_pal, self.pal = pal, pal
+            self.apply_palette()
 
-    # ---------- state Spotify ----------
     @staticmethod
     def _elide(label, text):
         label.setText(QFontMetrics(label.font()).elidedText(text, Qt.ElideRight, TEXT_W))
@@ -414,9 +627,10 @@ class Halo(QWidget):
         key = (s["title"], s["artist"])
         self._elide(self.title, s["title"])
         self._elide(self.artist, s["artist"])
-        self.btn_play.setText("⏸" if s["playing"] else "▶")
+        self.btn_play.set_kind("pause" if s["playing"] else "play")
         self._dur = s["dur"]
-        self._anchor = (s["pos"], time.monotonic())
+        if time.monotonic() >= self._seek_hold:
+            self._anchor = (s["pos"], time.monotonic())
 
         if key != self._track:
             self._reset_lyrics()
