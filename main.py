@@ -1,7 +1,8 @@
+import ctypes
+import os
 import sys
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from media import SpotifyWatcher
@@ -9,26 +10,37 @@ from ui import Halo
 from wallpaper import get_palette
 
 
-def make_icon(color):
-    pm = QPixmap(64, 64)
-    pm.fill(Qt.transparent)
-    p = QPainter(pm)
-    p.setRenderHint(QPainter.Antialiasing)
-    p.setBrush(QColor(color))
-    p.setPen(Qt.NoPen)
-    p.drawRoundedRect(4, 20, 56, 24, 12, 12)
-    p.end()
-    return QIcon(pm)
+def resource_path(rel):
+    """Path resource - bekerja saat dijalankan biasa maupun sebagai .exe (PyInstaller)."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, rel)
+
+
+def single_instance():
+    """Cegah Halo berjalan dua kali. Mengembalikan handle mutex (jangan dibuang)."""
+    k32 = ctypes.windll.kernel32
+    handle = k32.CreateMutexW(None, False, "Local\\HaloNowPlayingPopup")
+    if k32.GetLastError() == 183:  # ERROR_ALREADY_EXISTS
+        sys.exit(0)
+    return handle
 
 
 def main():
+    _mutex = single_instance()
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Halo.NowPlaying")
+    except Exception:
+        pass
+
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)  # tetap hidup di latar belakang
+    icon = QIcon(resource_path(os.path.join("assets", "halo.png")))
+    app.setWindowIcon(icon)
 
     watcher = SpotifyWatcher()
     halo = Halo(watcher, get_palette)
 
-    tray = QSystemTrayIcon(make_icon(halo.pal["accent"]), app)
+    tray = QSystemTrayIcon(icon, app)
     tray.setToolTip("Halo")
     menu = QMenu()
     reset = QAction("Reset posisi ke atas tengah")

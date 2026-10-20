@@ -114,6 +114,17 @@ class SpotifyWatcher(QObject):
         except Exception:
             return None
 
+    def seek(self, seconds):
+        asyncio.run_coroutine_threadsafe(self._seek(seconds), self._loop)
+
+    async def _seek(self, seconds):
+        s = self._session
+        if s is not None:
+            try:  # satuan SMTC: 100 nanodetik
+                await s.try_change_playback_position_async(int(seconds * 10_000_000))
+            except Exception:
+                pass
+
     def command(self, name):
         asyncio.run_coroutine_threadsafe(self._cmd(name), self._loop)
 
