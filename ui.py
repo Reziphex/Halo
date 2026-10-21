@@ -645,6 +645,11 @@ class Halo(QWidget):
 
     # ---------- cover & state Spotify ----------
     def on_cover(self, data):
+        if not data:  # tanpa cover: kembali ke placeholder dan palet wallpaper
+            self._cover_pm, self._cover_pal = None, None
+            self.pal = self.get_palette()
+            self.apply_palette()
+            return
         pm = QPixmap()
         if pm.loadFromData(data) and not pm.isNull():
             self._cover_pm = pm
