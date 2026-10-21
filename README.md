@@ -38,7 +38,7 @@ Started from curiosity, ended up as a weekend escape! 🎧 This passion project 
 ### 1. Get the project
 
 ```powershell
-git clone https://github.com/<your-username>/Halo.git
+git clone https://github.com/Reziphex/Halo.git
 cd Halo
 ```
 
