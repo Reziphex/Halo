@@ -10,6 +10,20 @@ from winrt.windows.media.control import (
 )
 from winrt.windows.storage.streams import Buffer, DataReader, InputStreamOptions
 
+# Aplikasi yang dipantau. Tambah/kurangi sesuai kebutuhan (cocok jika nama ada di AUMID sesi).
+# Browser dipakai untuk YouTube / YouTube Music.
+SOURCES = ("spotify", "chrome", "msedge", "firefox", "brave", "opera", "vivaldi")
+
+
+def _app_id(session):
+    return (session.source_app_user_model_id or "").lower()
+
+
+def _is_playing(session):
+    info = session.get_playback_info()
+    return bool(info) and info.playback_status == PlaybackStatus.PLAYING
+
+
 COMMANDS = {
     "play_pause": "try_toggle_play_pause_async",
     "next": "try_skip_next_async",
@@ -26,6 +40,7 @@ class SpotifyWatcher(QObject):
         super().__init__()
         self._loop = asyncio.new_event_loop()
         self._session = None
+        self._session_id = None
         self._last = None
         self._cover_key = None
         self._cover_tries = 0
@@ -53,18 +68,25 @@ class SpotifyWatcher(QObject):
                 self.changed.emit(state)
             await asyncio.sleep(1)
 
+    def _choose(self, manager):
+        """Pilih sesi: yang sedang diputar (Spotify diutamakan), atau tetap di sesi terakhir."""
+        sessions = [s for s in manager.get_sessions() if any(k in _app_id(s) for k in SOURCES)]
+        playing = [s for s in sessions if _is_playing(s)]
+        if playing:
+            keep = next((s for s in playing if _app_id(s) == self._session_id), None)
+            return keep or next((s for s in playing if "spotify" in _app_id(s)), playing[0])
+        keep = next((s for s in sessions if _app_id(s) == self._session_id), None)
+        return keep or next((s for s in sessions if "spotify" in _app_id(s)), None)
+
     async def _read(self, manager):
-        self._session = None
-        for s in manager.get_sessions():
-            if "spotify" in (s.source_app_user_model_id or "").lower():
-                self._session = s
-                break
+        self._session = self._choose(manager)
         if self._session is None:
+            self._session_id = None
             return {"active": False}
+        self._session_id = _app_id(self._session)
 
         props = await self._session.try_get_media_properties_async()
-        info = self._session.get_playback_info()
-        playing = bool(info) and info.playback_status == PlaybackStatus.PLAYING
+        playing = _is_playing(self._session)
         title = props.title or "Tanpa judul"
         artist = props.artist or "Artis tidak diketahui"
 
@@ -98,6 +120,9 @@ class SpotifyWatcher(QObject):
         if data and hash(data) != self._cover_hash:
             self._cover_hash, self._cover_tries = hash(data), 0
             self.cover.emit(data)
+        elif not data and self._cover_tries == 0 and self._cover_hash is not None:
+            self._cover_hash = None  # lagu/video ini tanpa cover: hapus cover lama
+            self.cover.emit(b"")
 
     @staticmethod
     async def _thumb(props):
